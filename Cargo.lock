@@ -13752,7 +13752,6 @@ dependencies = [
  "alloy-sol-types",
  "codspeed-criterion-compat",
  "commonware-codec",
- "commonware-consensus",
  "commonware-cryptography",
  "commonware-math",
  "commonware-utils",
