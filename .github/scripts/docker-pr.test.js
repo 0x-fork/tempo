@@ -7,13 +7,26 @@ const { test } = require('node:test');
 // Execute the workflow's inline dispatcher without checking out or running PR code.
 const yaml = fs.readFileSync(path.join(__dirname, '../workflows/docker-pr.yml'), 'utf8');
 function scriptFor(name) {
-  const step = yaml.split(`      - name: ${name}\n`)[1].split('\n      - name: ')[0];
+  const step = yaml.split(`      - name: ${name}\n`)[1].split('\n      - name: ')[0].split('\n  acknowledge:')[0];
   return step.split('          script: |\n')[1].split('\n')
     .map(line => line.replace(/^ {12}/, '')).join('\n');
 }
 const detectScript = scriptFor('Detect Docker command');
+const receiptScript = scriptFor('Confirm Docker command receipt');
+const updateReceiptScript = scriptFor('Update Docker request receipt');
 const membershipScript = scriptFor('Check org membership');
 const dispatchScript = scriptFor('Queue Docker build from comment');
+
+test('dispatch uses the STS app token so build lifecycle reporters can run', () => {
+  const step = yaml.split('      - name: Queue Docker build from comment\n')[1].split('\n  acknowledge:')[0];
+  assert.ok(step.includes('github-token: ${{ steps.github-sts.outputs.token }}'));
+  const policy = fs.readFileSync(path.join(__dirname, '../sts/docker-pr.sts.yaml'), 'utf8');
+  assert.match(policy, /^  actions: write$/m);
+  assert.match(policy, /^  members: read$/m);
+  assert.match(policy, /^  pull_requests: read$/m);
+  const dispatchJob = yaml.split('\n  dispatch:')[1].split('\n  acknowledge:')[0];
+  assert.ok(!dispatchJob.includes('actions: write'));
+});
 
 for (const [workflow, prefix] of [
   ['docker.yml', 'docker-build'],
@@ -64,6 +77,9 @@ function fixture(options = {}) {
   const command = options.command ?? '/docker';
   const calls = [];
   const links = [];
+  const outputs = {};
+  const commentCalls = [];
+  const events = [];
   const summary = {
     addHeading() { return this; },
     addLink(text, url) { links.push(url); return this; },
@@ -77,6 +93,7 @@ function fixture(options = {}) {
     head: { repo: options.deleted ? null : { full_name: options.repo || 'tempoxyz/tempo' } },
   };
   const record = (method, result, error) => async args => {
+    events.push(method);
     calls.push({ method, args });
     if (error) throw error;
     return { data: result };
@@ -84,19 +101,35 @@ function fixture(options = {}) {
   let recognized = false;
   const sandbox = {
     context: {
-      repo, actor: 'requester',
-      payload: { comment: { body: command, user: { login: 'comment-author' } },
+      repo, actor: 'requester', runId: 999,
+      payload: { comment: { id: 321, body: command, user: { login: 'comment-author' } },
         issue: { number: 123, pull_request: options.issue ? undefined : {} },
         repository: { default_branch: 'main' } },
     },
-    process: { env: { GITHUB_RUN_ATTEMPT: options.attempt || '1' } },
+    process: { env: { GITHUB_RUN_ATTEMPT: options.attempt || '1', REQUEST_ID: '321' } },
     core: {
       info() {}, summary,
-      setOutput(key, value) { if (key === 'recognized') recognized = value; },
+      setOutput(key, value) {
+        outputs[key] = value;
+        if (key === 'recognized') recognized = value;
+      },
       setFailed(message) { throw new Error(message); },
     },
     github: { rest: {
+      issues: {
+        createComment: async args => {
+          events.push('receipt');
+          commentCalls.push({ method: 'create', args });
+          if (options.receiptError) throw options.receiptError;
+          return { data: { id: 789 } };
+        },
+        updateComment: async args => {
+          commentCalls.push({ method: 'update', args });
+          if (options.updateReceiptError) throw options.updateReceiptError;
+        },
+      },
       orgs: { checkMembershipForUser: async args => {
+        events.push('membership');
         calls.push({ method: 'membership', args });
         assert.equal(args.org, 'tempoxyz');
         const who = args.username === 'comment-author' ? 'commenter' : 'author';
@@ -107,7 +140,7 @@ function fixture(options = {}) {
         { permission: options.permission || 'write' }, options.permissionError) },
       pulls: { get: record('pull', pr, options.pullError) },
       actions: { createWorkflowDispatch: record('dispatch',
-        { html_url: 'https://github.com/tempoxyz/tempo/actions/runs/456' }, options.dispatchError) },
+        { workflow_run_id: 456, html_url: 'https://github.com/tempoxyz/tempo/actions/runs/456' }, options.dispatchError) },
     } },
   };
   const execute = script => vm.runInNewContext(`(async () => {${script}\n})`, sandbox)();
@@ -116,11 +149,72 @@ function fixture(options = {}) {
     if (options.issue || (options.attempt && options.attempt !== '1')) return;
     await execute(detectScript);
     if (!recognized) return;
-    await execute(membershipScript);
-    await execute(dispatchScript);
+    try { await execute(receiptScript); } catch { /* continue-on-error */ }
+    try {
+      if (options.stsError) throw options.stsError;
+      await execute(membershipScript);
+      await execute(dispatchScript);
+    } finally {
+      if (outputs['comment-id'] && outputs['dispatch-started'] !== 'true') {
+        sandbox.process.env.RECEIPT_ID = outputs['comment-id'];
+        try { await execute(updateReceiptScript); } catch { /* continue-on-error */ }
+      }
+    }
   };
-  return { run, calls, links };
+  return { run, calls, links, outputs, commentCalls, events };
 }
+
+test('receipt is posted before authorization and handed to the status reporter', async () => {
+  const f = fixture();
+  await f.run();
+  assert.equal(f.events[0], 'receipt');
+  assert.equal(f.commentCalls.length, 1);
+  const [created] = f.commentCalls;
+  assert.equal(created.args.issue_number, 123);
+  assert.match(created.args.body, /Received `\/docker`\. Checking permissions/);
+  assert.match(created.args.body, /actions\/runs\/999/);
+  assert.ok(created.args.body.startsWith('<!-- tempo-docker-request:321 -->\n'));
+  assert.equal(f.calls.find(c => c.method === 'dispatch').args.inputs.request_id, '321');
+});
+
+for (const options of [
+  { stsError: new Error('STS unavailable') },
+  { commenterStatus: 403 },
+  { permission: 'read' },
+]) {
+  test(`receipt explains an unsuccessful request: ${JSON.stringify(options)}`, async () => {
+    const f = fixture(options);
+    await assert.rejects(f.run());
+    assert.equal(f.commentCalls.length, 2);
+    assert.match(f.commentCalls[1].args.body, /request failed before a build could be queued/);
+    assert.match(f.commentCalls[1].args.body, /actions\/runs\/999/);
+  });
+}
+
+test('receipt API failure is not retried and does not block the build', async () => {
+  const f = fixture({ receiptError: new Error('comment unavailable') });
+  await f.run();
+  assert.equal(f.commentCalls.length, 1);
+  assert.equal(f.outputs['run-id'], '456');
+});
+
+test('receipt update failure preserves the authorization failure', async () => {
+  const f = fixture({ permission: 'read', updateReceiptError: new Error('comment unavailable') });
+  await assert.rejects(f.run(), /write access/);
+  assert.equal(f.commentCalls.length, 2);
+  assert.equal(f.outputs['run-id'], undefined);
+  const step = yaml.split('      - name: Update Docker request receipt\n')[1].split('\n  acknowledge:')[0];
+  assert.ok(step.includes('continue-on-error: true'));
+});
+
+test('a lost dispatch response never overwrites an early lifecycle report', async () => {
+  const f = fixture({ dispatchError: new Error('response lost') });
+  await assert.rejects(f.run(), /response lost/);
+  assert.equal(f.outputs['dispatch-started'], 'true');
+  assert.equal(f.commentCalls.length, 1);
+  const step = yaml.split('      - name: Update Docker request receipt\n')[1].split('\n  acknowledge:')[0];
+  assert.ok(step.includes("steps.build.outputs.dispatch-started != 'true'"));
+});
 
 for (const [command, workflow, nightly = false] of [
   ['/docker', 'docker.yml'], ['/docker profiling', 'docker-profiling.yml'],
@@ -135,10 +229,11 @@ for (const [command, workflow, nightly = false] of [
     const dispatch = JSON.parse(JSON.stringify(f.calls.find(call => call.method === 'dispatch').args));
     assert.equal(dispatch.workflow_id, workflow);
     assert.equal(dispatch.ref, 'main');
-    assert.deepEqual(dispatch.inputs, nightly ? { pr_number: '123', nightly: 'true' } : { pr_number: '123' });
+    assert.deepEqual(dispatch.inputs, { pr_number: '123', request_id: '321', ...(nightly ? { nightly: 'true' } : {}) });
     assert.equal(dispatch.return_run_details, true);
     assert.equal(f.calls.find(call => call.method === 'permission').args.username, 'comment-author');
     assert.deepEqual(f.links, ['https://github.com/tempoxyz/tempo/actions/runs/456']);
+    assert.equal(f.outputs['run-id'], '456');
   });
 }
 
@@ -196,6 +291,7 @@ for (const options of [
     const f = fixture(options);
     await f.run();
     assert.equal(f.calls.length, 0);
+    assert.equal(f.commentCalls.length, 0);
   });
 }
 
@@ -204,5 +300,6 @@ for (const stage of ['permission', 'pull', 'dispatch']) {
     const f = fixture({ [`${stage}Error`]: new Error('API unavailable') });
     await assert.rejects(f.run(), /API unavailable/);
     assert.equal(f.calls.filter(call => call.method === 'dispatch').length, stage === 'dispatch' ? 1 : 0);
+    assert.equal(f.outputs['run-id'], undefined);
   });
 }

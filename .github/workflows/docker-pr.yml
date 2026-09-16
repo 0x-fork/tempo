@@ -13,6 +13,8 @@ concurrency:
 
 jobs:
   dispatch:
+    outputs:
+      run-id: ${{ steps.build.outputs.run-id }}
     # Each new comment is one request. Post another command to retry, rather
     # than rerunning a dispatcher that may already have queued a build.
     if: >-
@@ -22,9 +24,8 @@ jobs:
       contains(github.event.comment.body, '/docker')
     runs-on: ubuntu-latest
     permissions:
-      actions: write
       id-token: write
-      pull-requests: read
+      pull-requests: write
     steps:
       # This workflow only calls GitHub APIs; it never checks out or runs PR code.
       - name: Detect Docker command
@@ -34,6 +35,23 @@ jobs:
           script: |
             const command = context.payload.comment.body.trim();
             core.setOutput('recognized', ['/docker', '/docker nightly', '/docker profiling'].includes(command));
+
+      - name: Confirm Docker command receipt
+        id: receipt
+        if: steps.command.outputs.recognized == 'true'
+        continue-on-error: true
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          retries: 0
+          script: |
+            const command = context.payload.comment.body.trim();
+            const url = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const { data: comment } = await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.payload.issue.number,
+              body: `<!-- tempo-docker-request:${context.payload.comment.id} -->\nReceived \`${command}\`. Checking permissions and preparing the build.\n\n[Request progress](${url})`,
+            });
+            core.setOutput('comment-id', String(comment.id));
 
       - name: Fetch GitHub token via STS
         id: github-sts
@@ -74,9 +92,14 @@ jobs:
             }
 
       - name: Queue Docker build from comment
+        id: build
         if: steps.command.outputs.recognized == 'true'
+        env:
+          REQUEST_ID: ${{ github.event.comment.id }}
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
+          # GITHUB_TOKEN dispatches suppress downstream workflow_run reporters.
+          github-token: ${{ steps.github-sts.outputs.token }}
           retries: 0
           script: |
             const workflows = {
@@ -106,8 +129,11 @@ jobs:
             }
             // Run trusted workflow code from the default branch. The build
             // workflow resolves pr_number to an exact head SHA before checkout.
-            const inputs = { pr_number: String(number) };
+            const inputs = { pr_number: String(number), request_id: process.env.REQUEST_ID };
             if (command === '/docker nightly') inputs.nightly = 'true';
+            // After this point the request may have queued a build even if the
+            // API response is lost. Only the serialized reporter edits its receipt.
+            core.setOutput('dispatch-started', 'true');
             const { data: run } = await github.rest.actions.createWorkflowDispatch({
               ...context.repo,
               workflow_id: workflow,
@@ -117,8 +143,37 @@ jobs:
               headers: { 'X-GitHub-Api-Version': '2022-11-28' },
             });
             core.info(`Queued ${workflow} for PR #${number}`);
+            core.setOutput('run-id', String(run.workflow_run_id));
             await core.summary
               .addHeading(`Docker build queued for PR #${number}`)
               .addLink('Open build', run.html_url)
               .addRaw('\n\nPost a new command comment to request another build. Edits and new commits alone do not trigger builds.\n')
               .write();
+
+      - name: Update Docker request receipt
+        if: always() && steps.receipt.outputs.comment-id != '' && steps.build.outputs.dispatch-started != 'true'
+        continue-on-error: true
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          RECEIPT_ID: ${{ steps.receipt.outputs.comment-id }}
+        with:
+          retries: 0
+          script: |
+            const command = context.payload.comment.body.trim();
+            const base = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/`;
+            const body = `<!-- tempo-docker-request:${context.payload.comment.id} -->\nReceived \`${command}\`, but the request failed before a build could be queued. [Check the request log](${base}${context.runId}) for details.`;
+            await github.rest.issues.updateComment({
+              ...context.repo, comment_id: Number(process.env.RECEIPT_ID), body,
+            });
+
+  acknowledge:
+    needs: dispatch
+    if: needs.dispatch.outputs.run-id != ''
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+    # Pinned CI actionlint 1.7.12 does not support the newer $/ syntax yet.
+    uses: ./.github/workflows/docker-pr-status.yml # zizmor: ignore[self-repository]
+    with:
+      run_id: ${{ needs.dispatch.outputs.run-id }}
