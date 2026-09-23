@@ -807,10 +807,7 @@ pub fn derive_p256_address(pub_key_x: &B256, pub_key_y: &B256) -> Address {
     let mut encoded_key = [0u8; 64];
     encoded_key[..32].copy_from_slice(pub_key_x.as_slice());
     encoded_key[32..].copy_from_slice(pub_key_y.as_slice());
-    let hash = keccak256(encoded_key);
-
-    // Take last 20 bytes as address
-    Address::from_slice(&hash[12..])
+    Address::from_raw_public_key(&encoded_key)
 }
 
 /// Concatenates byte slices into a fixed-size array without heap allocations.
@@ -1091,6 +1088,12 @@ mod tests {
     }
 
     proptest! {
+        #[test]
+        fn p256_address_matches_hash_and_truncate(x in any::<[u8; 32]>(), y in any::<[u8; 32]>()) {
+            let hash = keccak256([x, y].concat());
+            prop_assert_eq!(derive_p256_address(&B256::from(x), &B256::from(y)), Address::from_slice(&hash[12..]));
+        }
+
         #[test]
         fn proptest_primitive_signature_rlp_encoding(signature in arb::<PrimitiveSignature>()) {
             let bytes = signature.to_bytes();
