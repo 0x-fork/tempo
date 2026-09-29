@@ -13,7 +13,7 @@ use reth_provider::HeaderProvider;
 use reth_storage_api::{BlockNumReader, BlockReader, ReceiptProvider, StateProviderFactory};
 use std::{
     collections::{BTreeMap, HashMap},
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tempo_chainspec::hardfork::TempoHardfork;
 use tempo_precompiles::dispatch::abi_decoder_config_for_spec;
@@ -644,6 +644,7 @@ where
         }
 
         // 4. All txns in the block execute properly
+        validate_block_timestamp(block.header().timestamp_millis(), SystemTime::now())?;
         let payload = ZonePayloadTypes::block_to_payload(block, None);
         let status = self.context.engine.new_payload(payload).await?;
         if !status.is_valid() {
@@ -1025,6 +1026,16 @@ fn decode_advance_tempo(block: &SealedBlock<Block>) -> eyre::Result<DecodedTempo
         deposits: call.deposits,
         enabled_tokens: call.enabledTokens,
     })
+}
+
+/// Reject peer blocks too far ahead of the local clock before they reach `newPayload`.
+fn validate_block_timestamp(timestamp_millis: u64, now: SystemTime) -> eyre::Result<()> {
+    let now_millis = now.duration_since(UNIX_EPOCH)?.as_millis();
+    eyre::ensure!(
+        u128::from(timestamp_millis) <= now_millis + 100,
+        "block timestamp {timestamp_millis} exceeds local clock {now_millis} by more than 100 ms"
+    );
+    Ok(())
 }
 
 #[cfg(test)]
