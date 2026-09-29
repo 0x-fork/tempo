@@ -94,8 +94,9 @@ impl fmt::Debug for SettlementProverConfig {
 /// Inputs for observational SPF validation on RPC followers.
 pub type ShadowProverConfig = SettlementProverConfig;
 
+/// Validation worker whose attested proofs gate L1 settlement.
 #[derive(Debug, Clone)]
-pub(crate) struct SettlementProver {
+pub struct SettlementProver {
     sender: mpsc::Sender<ProverJob>,
 }
 
@@ -201,7 +202,8 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for FirstReadTimed<T> {
     }
 }
 
-pub(crate) fn spawn_settlement_prover<P: ZoneSequencerProvider>(
+/// Spawn the node's settlement prover, shared by every leader generation.
+pub fn spawn_settlement_prover<P: ZoneSequencerProvider>(
     config: SettlementProverConfig,
     proofs: ProofCollectorHandle,
     zone_provider: P,
