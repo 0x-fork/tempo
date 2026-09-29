@@ -364,10 +364,7 @@ mod tests {
     }
 
     fn advance_tempo_tx() -> TempoTxEnvelope {
-        system_tx(
-            ZONE_INBOX_ADDRESS,
-            Bytes::copy_from_slice(&ADVANCE_TEMPO_SELECTOR),
-        )
+        system_tx(ZONE_INBOX_ADDRESS, ADVANCE_TEMPO_SELECTOR.into())
     }
 
     fn finalize_withdrawal_batch_tx() -> TempoTxEnvelope {
@@ -502,7 +499,7 @@ mod tests {
 
         let malformed_finalize = system_tx(
             ZONE_OUTBOX_ADDRESS,
-            Bytes::copy_from_slice(&IZoneOutbox::finalizeWithdrawalBatchCall::SELECTOR),
+            IZoneOutbox::finalizeWithdrawalBatchCall::SELECTOR.into(),
         );
         assert_eq!(
             ZoneBlockPhase::Executing
@@ -556,7 +553,7 @@ mod tests {
         let tx = Recovered::new_unchecked(
             system_tx(
                 ZONE_OUTBOX_ADDRESS,
-                Bytes::copy_from_slice(&IZoneOutbox::finalizeWithdrawalBatchCall::SELECTOR),
+                IZoneOutbox::finalizeWithdrawalBatchCall::SELECTOR.into(),
             ),
             TEMPO_SYSTEM_TX_SENDER,
         );
@@ -862,10 +859,7 @@ mod tests {
 
     #[test]
     fn non_system_selector_lookalikes_are_regular_transactions() {
-        let advance_lookalike = ordinary_tx(
-            ZONE_INBOX_ADDRESS,
-            Bytes::copy_from_slice(&ADVANCE_TEMPO_SELECTOR),
-        );
+        let advance_lookalike = ordinary_tx(ZONE_INBOX_ADDRESS, ADVANCE_TEMPO_SELECTOR.into());
         let finalize_lookalike = ordinary_tx(
             ZONE_OUTBOX_ADDRESS,
             IZoneOutbox::finalizeWithdrawalBatchCall {
