@@ -275,7 +275,10 @@ mod tests {
             NO_PROOF_FALLBACK_VERIFIER_HASH,
             keccak256(NO_PROOF_FALLBACK_VERIFIER)
         );
-        assert_ne!(NITRO_VERIFIER_CONFIG_V1_HASH, keccak256([]));
+        assert_ne!(
+            NITRO_VERIFIER_CONFIG_V1_HASH,
+            alloy_consensus::constants::KECCAK_EMPTY
+        );
     }
 
     #[test]
