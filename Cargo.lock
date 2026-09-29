@@ -14192,7 +14192,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-rlp",
  "alloy-sol-types",
- "const-hex",
  "derive_more",
  "eyre",
  "k256",

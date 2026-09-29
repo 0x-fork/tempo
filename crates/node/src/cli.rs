@@ -952,9 +952,7 @@ mod tests {
 
         assert_eq!(
             signer.address(),
-            "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf"
-                .parse::<alloy_primitives::Address>()
-                .unwrap()
+            alloy_primitives::address!("0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf")
         );
     }
 
@@ -1023,9 +1021,7 @@ mod tests {
 
         assert_eq!(
             signer.address(),
-            "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf"
-                .parse::<alloy_primitives::Address>()
-                .unwrap()
+            alloy_primitives::address!("0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf")
         );
     }
 
