@@ -26,6 +26,10 @@ on:
         type: string
         default: ""
   workflow_call:
+    outputs:
+      tempo_image_tag:
+        description: Image tag published by this build attempt
+        value: ${{ jobs.build-and-push.outputs.tempo_image_tag }}
   # We're building nightly only once a day to let the rollout cook for 24h without interruptions
   schedule:
     - cron: "5 9 * * *"
@@ -42,6 +46,8 @@ env:
 jobs:
   build-and-push:
     name: Build and Push Docker Images
+    outputs:
+      tempo_image_tag: ${{ steps.meta-tempo.outputs.version }}
     if: ${{ (github.event_name != 'schedule' || github.repository == 'tempoxyz/tempo') && !(github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository != 'tempoxyz/tempo') }}
     runs-on: depot-ubuntu-latest-16
     permissions:
@@ -63,7 +69,12 @@ jobs:
         with:
           script: |
             const number = process.env.PR_NUMBER || '';
-            let sha = context.sha;
+            const pullRequest = context.payload.pull_request;
+            // PR builds use the submitted commit, not GitHub's temporary merge commit.
+            let sha = pullRequest?.head.sha || context.sha;
+            if (pullRequest && pullRequest.head.repo?.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+              throw new Error('PR image publishing only supports branches in this repository, not forks');
+            }
             let branch = process.env.BRANCH_NAME;
             if (number) {
               if (!/^[1-9][0-9]*$/.test(number) || !Number.isSafeInteger(Number(number))) {
@@ -89,7 +100,7 @@ jobs:
             core.setOutput('sha', sha);
             core.setOutput('short_sha', sha.slice(0, 7));
             core.setOutput('branch', branch);
-            core.setOutput('revision_label', number ? `org.opencontainers.image.revision=${sha}` : '');
+            core.setOutput('revision_label', (number || pullRequest) ? `org.opencontainers.image.revision=${sha}` : '');
             await core.summary
               .addHeading('Docker build source')
               .addTable([
@@ -147,9 +158,7 @@ jobs:
             type=raw,value=stable,enable=${{ inputs.pr_number == '' && github.ref_type == 'tag' }}
             type=raw,value=latest,enable=${{ inputs.pr_number == '' && '{{is_default_branch}}' || 'false' }}
             type=edge,branch=main,enable=${{ inputs.pr_number == '' }}
-            type=sha,prefix=sha-,enable=${{ inputs.pr_number == '' }}
-            type=raw,value=sha-${{ steps.source.outputs.short_sha }},priority=100,enable=${{ inputs.pr_number != '' }}
-            type=ref,event=pr,enable=${{ inputs.pr_number == '' }}
+            type=raw,value=sha-${{ steps.source.outputs.short_sha }},priority=100
             type=raw,value=pr-${{ inputs.pr_number }},enable=${{ inputs.pr_number != '' }}
 
       - name: Docker metadata for tempo-localnet
@@ -172,9 +181,7 @@ jobs:
             type=raw,value=stable,enable=${{ inputs.pr_number == '' && github.ref_type == 'tag' }}
             type=raw,value=latest,enable=${{ inputs.pr_number == '' && '{{is_default_branch}}' || 'false' }}
             type=edge,branch=main,enable=${{ inputs.pr_number == '' }}
-            type=sha,prefix=sha-,enable=${{ inputs.pr_number == '' }}
-            type=raw,value=sha-${{ steps.source.outputs.short_sha }},priority=100,enable=${{ inputs.pr_number != '' }}
-            type=ref,event=pr,enable=${{ inputs.pr_number == '' }}
+            type=raw,value=sha-${{ steps.source.outputs.short_sha }},priority=100
             type=raw,value=pr-${{ inputs.pr_number }},enable=${{ inputs.pr_number != '' }}
 
       - name: Docker metadata for tempo-sidecar
@@ -197,9 +204,7 @@ jobs:
             type=raw,value=stable,enable=${{ inputs.pr_number == '' && github.ref_type == 'tag' }}
             type=raw,value=latest,enable=${{ inputs.pr_number == '' && '{{is_default_branch}}' || 'false' }}
             type=edge,branch=main,enable=${{ inputs.pr_number == '' }}
-            type=sha,prefix=sha-,enable=${{ inputs.pr_number == '' }}
-            type=raw,value=sha-${{ steps.source.outputs.short_sha }},priority=100,enable=${{ inputs.pr_number != '' }}
-            type=ref,event=pr,enable=${{ inputs.pr_number == '' }}
+            type=raw,value=sha-${{ steps.source.outputs.short_sha }},priority=100
             type=raw,value=pr-${{ inputs.pr_number }},enable=${{ inputs.pr_number != '' }}
 
       - name: Docker metadata for tempo-xtask
@@ -222,9 +227,7 @@ jobs:
             type=raw,value=stable,enable=${{ inputs.pr_number == '' && github.ref_type == 'tag' }}
             type=raw,value=latest,enable=${{ inputs.pr_number == '' && '{{is_default_branch}}' || 'false' }}
             type=edge,branch=main,enable=${{ inputs.pr_number == '' }}
-            type=sha,prefix=sha-,enable=${{ inputs.pr_number == '' }}
-            type=raw,value=sha-${{ steps.source.outputs.short_sha }},priority=100,enable=${{ inputs.pr_number != '' }}
-            type=ref,event=pr,enable=${{ inputs.pr_number == '' }}
+            type=raw,value=sha-${{ steps.source.outputs.short_sha }},priority=100
             type=raw,value=pr-${{ inputs.pr_number }},enable=${{ inputs.pr_number != '' }}
 
       - name: Log in to Container Registry
@@ -350,7 +353,7 @@ jobs:
 
       - name: Publish event (sha tag)
         id: publish-sha-event
-        if: ${{ github.repository == 'tempoxyz/tempo' && github.event_name != 'merge_group' }}
+        if: ${{ github.repository == 'tempoxyz/tempo' && github.event_name != 'merge_group' && github.event_name != 'pull_request' }}
         shell: bash
         env:
           EVENTS_KEY: ${{ secrets.EVENTS_KEY }}
