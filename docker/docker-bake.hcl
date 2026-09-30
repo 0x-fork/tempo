@@ -28,6 +28,8 @@ target "chef" {
   args = {
     RUST_PROFILE = "profiling"
     RUST_FEATURES = "jemalloc"
+    CACHE_FAMILY = "node"
+    RUST_BINARIES = "tempo-zone tempo-xtask"
   }
 }
 
@@ -38,9 +40,13 @@ target "prover-chef" {
   args = {
     RUST_PROFILE = "release"
     RUST_FEATURES = ""
+    CACHE_FAMILY = "prover"
+    RUST_BINARIES = "tempo-zone-prover-utils tempo-zone-prover-enclave"
   }
 }
 
+# Utilities and enclave share the same release dependency graph.
+# Keep its layer and cache mounts reusable across both consumers.
 target "_common" {
   dockerfile = "docker/Dockerfile"
   context = "."
@@ -50,6 +56,7 @@ target "_common" {
   args = {
     CHEF_IMAGE = "chef"
     RUST_PROFILE = "profiling"
+    CACHE_FAMILY = "node"
     VERGEN_GIT_SHA = "${VERGEN_GIT_SHA}"
     VERGEN_GIT_SHA_SHORT = "${VERGEN_GIT_SHA_SHORT}"
   }
@@ -70,6 +77,7 @@ target "tempo-zone-prover-enclave" {
   args = {
     CHEF_IMAGE = "chef"
     RUST_PROFILE = "release"
+    CACHE_FAMILY = "prover"
   }
   platforms = ["linux/amd64"]
 }
@@ -84,6 +92,7 @@ target "tempo-zone-prover-utils" {
   args = {
     CHEF_IMAGE = "chef"
     RUST_PROFILE = "release"
+    CACHE_FAMILY = "prover"
   }
   platforms = ["linux/amd64"]
 }
