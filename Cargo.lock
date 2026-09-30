@@ -13556,6 +13556,7 @@ dependencies = [
  "alloy-evm",
  "alloy-genesis",
  "alloy-primitives",
+ "clap",
  "commonware-codec",
  "commonware-cryptography",
  "eyre",
