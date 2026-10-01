@@ -3850,8 +3850,14 @@ pub(crate) async fn start_real_p2p_cluster_with_settlement_proving(
             address: "127.0.0.1:1".to_owned(),
         })
         .collect();
-    let prover_addresses =
-        zone_sequencer::ProverAddresses::new(unreachable)?.expect("hardforks are non-empty");
+    // Use a synthetic transport policy even for forks without approved enclave measurements.
+    // These endpoints never serve a proof; the tests exercise NoProof fallback.
+    let pcr = "11".repeat(48);
+    let policy = serde_json::to_vec(&serde_json::json!({
+        "pcrs": { "0": [&pcr], "1": [&pcr], "2": [&pcr] }
+    }))?;
+    let prover_addresses = zone_sequencer::ProverAddresses::new(unreachable, Some(&policy))?
+        .expect("hardforks are non-empty");
     Ok(start_real_p2p_cluster_inner(
         withdrawal_batch_interval_blocks,
         active_nodes,
