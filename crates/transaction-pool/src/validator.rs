@@ -382,25 +382,49 @@ where
             .collect()
     }
 
-    /// Returns the latest state provider and a state cache valid for the provider's tip.
+    /// Returns the current tip's state provider and matching read cache.
+    ///
+    /// Using one tip hash prevents a concurrent head update from pairing old state with a new cache.
     fn latest_state_provider_and_cache(
         &self,
     ) -> ProviderResult<(StateProviderBox, Arc<StateCache>)> {
-        let state_provider = self.inner.client().latest()?;
-        let latest_hash = self.inner.client().chain_info()?.best_hash;
-        Ok((state_provider, self.state_cache_for_tip(latest_hash)))
+        let tip = self.inner.client().chain_info()?.best_hash;
+        let tip_provider = self.inner.client().state_by_block_hash(tip);
+        self.provider_and_cache_for_tip(tip, tip_provider)
     }
 
-    /// Returns the shared cache if it matches `tip_hash`, otherwise an empty ephemeral cache.
-    ///
-    /// A mismatch can happen when `.latest()` observes state for a newer canonical tip before
-    /// `on_new_head_block` has refreshed the validator's cached state for that tip.
+    /// Returns the shared cache if its tip matches `tip_hash`, otherwise a fresh cache.
     fn state_cache_for_tip(&self, tip_hash: B256) -> Arc<StateCache> {
         let (cached_tip_hash, cached_state) = self.cached_state.read().clone();
         if cached_tip_hash == tip_hash {
             cached_state
         } else {
             Arc::new(StateCache::default())
+        }
+    }
+
+    /// Uses the tip's cache when its state provider is available.
+    ///
+    /// Falls back to `latest()` with a private cache because the fallback state's tip is unknown.
+    fn provider_and_cache_for_tip(
+        &self,
+        tip: B256,
+        tip_provider: ProviderResult<StateProviderBox>,
+    ) -> ProviderResult<(StateProviderBox, Arc<StateCache>)> {
+        match tip_provider {
+            Ok(provider) => Ok((provider, self.state_cache_for_tip(tip))),
+            Err(err) => {
+                tracing::debug!(
+                    target: "txpool",
+                    %err,
+                    %tip,
+                    "no state provider for tip, validating against latest state"
+                );
+                Ok((
+                    self.inner.client().latest()?,
+                    Arc::new(StateCache::default()),
+                ))
+            }
         }
     }
 
@@ -1201,6 +1225,19 @@ mod tests {
     }
 
     #[test]
+    fn latest_state_provider_uses_shared_cache_for_current_tip() {
+        let tx = TxBuilder::eip1559(Address::random()).build_eip1559();
+        let validator = setup_validator(&tx, 1);
+        let latest_hash = validator.client().chain_info().unwrap().best_hash;
+        let shared_cache = Arc::new(StateCache::default());
+        *validator.cached_state.write() = (latest_hash, shared_cache.clone());
+
+        let (_, validation_cache) = validator.latest_state_provider_and_cache().unwrap();
+
+        assert!(Arc::ptr_eq(&validation_cache, &shared_cache));
+    }
+
+    #[test]
     fn latest_state_provider_uses_ephemeral_cache_when_tip_hash_mismatches_latest() {
         let tx = TxBuilder::eip1559(Address::random()).build_eip1559();
         let validator = setup_validator(&tx, 1);
@@ -1216,6 +1253,45 @@ mod tests {
         let (_, validation_cache) = validator.latest_state_provider_and_cache().unwrap();
 
         assert!(!Arc::ptr_eq(&validation_cache, &shared_cache));
+    }
+
+    /// A head update between provider and cache lookup must keep old state out of the new cache.
+    #[test]
+    fn provider_for_old_tip_never_uses_cache_retagged_to_new_tip() {
+        let tx = TxBuilder::eip1559(Address::random()).build_eip1559();
+        let validator = setup_validator(&tx, 1);
+        let tip_x = validator.client().chain_info().unwrap().best_hash;
+        let tip_y = B256::repeat_byte(0x59);
+        assert_ne!(tip_x, tip_y);
+
+        let provider_x = validator.client().state_by_block_hash(tip_x);
+
+        let cache_y = Arc::new(StateCache::default());
+        *validator.cached_state.write() = (tip_y, cache_y.clone());
+
+        let (_, validation_cache) = validator
+            .provider_and_cache_for_tip(tip_x, provider_x)
+            .unwrap();
+
+        assert!(!Arc::ptr_eq(&validation_cache, &cache_y));
+        assert!(Arc::ptr_eq(&validator.cached_state.read().1, &cache_y));
+    }
+
+    #[test]
+    fn missing_tip_provider_falls_back_to_latest_with_ephemeral_cache() {
+        let tx = TxBuilder::eip1559(Address::random()).build_eip1559();
+        let validator = setup_validator(&tx, 1);
+        let tip = validator.client().chain_info().unwrap().best_hash;
+        let shared_cache = Arc::new(StateCache::default());
+        *validator.cached_state.write() = (tip, shared_cache.clone());
+
+        // Fallback state must not use the shared cache, even when its tag matches `tip`.
+        let (provider, validation_cache) = validator
+            .provider_and_cache_for_tip(tip, Err(ProviderError::StateForHashNotFound(tip)))
+            .unwrap();
+
+        assert!(!Arc::ptr_eq(&validation_cache, &shared_cache));
+        provider.basic_account(&Address::ZERO).unwrap();
     }
 
     #[tokio::test]
