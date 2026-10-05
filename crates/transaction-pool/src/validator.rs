@@ -1049,8 +1049,7 @@ mod tests {
         valid_after: Option<u64>,
         valid_before: Option<u64>,
     ) -> TempoPooledTransaction {
-        let mut builder = TxBuilder::aa(Address::random())
-            .fee_token(address!("0000000000000000000000000000000000000002"));
+        let mut builder = TxBuilder::aa(Address::random()).fee_token(Address::with_last_byte(2));
         if let Some(va) = valid_after {
             builder = builder.valid_after(va);
         }
@@ -1139,7 +1138,7 @@ mod tests {
                 TxBuilder::eip1559(sender).nonce(nonce).build_eip1559(),
                 TxBuilder::aa(sender).nonce(nonce).build(),
                 TxBuilder::aa(sender)
-                    .nonce_key(U256::from(1))
+                    .nonce_key(U256::ONE)
                     .nonce(nonce)
                     .build(),
                 TxBuilder::aa(sender)
@@ -1312,7 +1311,7 @@ mod tests {
         let authority_signer = PrivateKeySigner::random();
         let expected_authority = authority_signer.address();
         let authorization = Authorization {
-            chain_id: U256::from(1),
+            chain_id: U256::ONE,
             nonce: 0,
             address: Address::random(),
         };
@@ -1351,7 +1350,7 @@ mod tests {
     #[tokio::test]
     async fn test_some_balance() {
         let transaction = TxBuilder::eip1559(Address::random())
-            .value(U256::from(1))
+            .value(U256::ONE)
             .build_eip1559();
         let validator = setup_validator(&transaction, 0);
 
@@ -1633,7 +1632,7 @@ mod tests {
     /// This is the fix for the audit finding about mempool DoS via gas calculation mismatch.
     #[tokio::test]
     async fn test_aa_intrinsic_gas_validation() {
-        use alloy_primitives::{Signature, TxKind, address};
+        use alloy_primitives::{Signature, TxKind};
         use tempo_primitives::transaction::{
             TempoTransaction,
             tempo_transaction::Call,
@@ -1650,7 +1649,7 @@ mod tests {
         let create_aa_tx = |gas_limit: u64| {
             let calls: Vec<Call> = (0..10)
                 .map(|i| Call {
-                    to: TxKind::Call(Address::from([i as u8; 20])),
+                    to: TxKind::Call(Address::repeat_byte(i as u8)),
                     value: U256::ZERO,
                     input: alloy_primitives::Bytes::from(vec![0x00; 100]),
                 })
@@ -1664,7 +1663,7 @@ mod tests {
                 calls,
                 nonce_key: U256::ZERO,
                 nonce: 0,
-                fee_token: Some(address!("0000000000000000000000000000000000000002")),
+                fee_token: Some(Address::with_last_byte(2)),
                 ..Default::default()
             };
 
@@ -1753,7 +1752,7 @@ mod tests {
             } else {
                 (0..10)
                     .map(|i| TxCall {
-                        to: TxKind::Call(Address::from([i as u8; 20])),
+                        to: TxKind::Call(Address::repeat_byte(i as u8)),
                         value: U256::ZERO,
                         input: alloy_primitives::Bytes::from(vec![0x00; 100]),
                     })
@@ -1775,7 +1774,7 @@ mod tests {
                 nonce_key,
                 nonce: 0,
                 valid_before,
-                fee_token: Some(address!("0000000000000000000000000000000000000002")),
+                fee_token: Some(Address::with_last_byte(2)),
                 ..Default::default()
             };
 
@@ -1884,7 +1883,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_expiring_nonce_intrinsic_gas_uses_lower_cost() {
-        use alloy_primitives::{Signature, TxKind, address};
+        use alloy_primitives::{Signature, TxKind};
         use tempo_primitives::transaction::{
             TempoTransaction,
             tempo_transaction::Call,
@@ -1900,7 +1899,7 @@ mod tests {
         // Helper to create expiring nonce AA tx with given gas limit
         let create_expiring_nonce_tx = |gas_limit: u64| {
             let calls: Vec<Call> = vec![Call {
-                to: TxKind::Call(Address::from([1u8; 20])),
+                to: TxKind::Call(Address::repeat_byte(1u8)),
                 value: U256::ZERO,
                 input: alloy_primitives::Bytes::from(vec![0xd0, 0x9d, 0xe0, 0x8a]), // increment()
             }];
@@ -1914,7 +1913,7 @@ mod tests {
                 nonce_key: TEMPO_EXPIRING_NONCE_KEY, // Expiring nonce
                 nonce: 0,
                 valid_before: Some(core::num::NonZeroU64::new(current_time + 25).unwrap()), // Valid for 25 seconds
-                fee_token: Some(address!("0000000000000000000000000000000000000002")),
+                fee_token: Some(Address::with_last_byte(2)),
                 ..Default::default()
             };
 
@@ -1963,7 +1962,7 @@ mod tests {
     /// pass pool validation but fail at execution time.
     #[tokio::test]
     async fn test_existing_2d_nonce_key_intrinsic_gas() {
-        use alloy_primitives::{Signature, TxKind, address};
+        use alloy_primitives::{Signature, TxKind};
         use tempo_primitives::transaction::{
             TempoTransaction,
             tempo_transaction::Call,
@@ -1979,7 +1978,7 @@ mod tests {
         // Helper to create AA tx with a specific nonce_key and nonce
         let create_aa_tx = |gas_limit: u64, nonce_key: U256, nonce: u64| {
             let calls: Vec<Call> = vec![Call {
-                to: TxKind::Call(Address::from([1u8; 20])),
+                to: TxKind::Call(Address::repeat_byte(1u8)),
                 value: U256::ZERO,
                 input: alloy_primitives::Bytes::from(vec![0xd0, 0x9d, 0xe0, 0x8a]), // increment()
             }];
@@ -1992,7 +1991,7 @@ mod tests {
                 calls,
                 nonce_key,
                 nonce,
-                fee_token: Some(address!("0000000000000000000000000000000000000002")),
+                fee_token: Some(Address::with_last_byte(2)),
                 ..Default::default()
             };
 
@@ -2033,7 +2032,7 @@ mod tests {
 
         // Test 2: 2D nonce (nonce_key != 0) with nonce > 0, same 50k gas.
         // This triggers the EXISTING_NONCE_KEY_GAS branch (+5k), but 50k is still enough.
-        let tx_2d_ok = create_aa_tx(50_000, U256::from(1), 5);
+        let tx_2d_ok = create_aa_tx(50_000, U256::ONE, 5);
         let validator = setup_validator(&tx_2d_ok, current_time);
         let outcome = validator
             .validate_transaction(TransactionOrigin::External, tx_2d_ok)
@@ -2060,7 +2059,7 @@ mod tests {
         // Test 3: 2D nonce (nonce_key != 0), nonce > 0, with gas that is sufficient for
         // base intrinsic gas but NOT sufficient when EXISTING_NONCE_KEY_GAS (5k) is added.
         // Use 22_000 gas: enough for base ~21k + calldata but not when +5k is charged.
-        let tx_2d_low = create_aa_tx(22_000, U256::from(1), 5);
+        let tx_2d_low = create_aa_tx(22_000, U256::ONE, 5);
         let validator = setup_validator(&tx_2d_low, current_time);
         let outcome = validator
             .validate_transaction(TransactionOrigin::External, tx_2d_low)
@@ -2119,7 +2118,7 @@ mod tests {
     #[tokio::test]
     async fn test_non_zero_value_in_eip1559_rejected() {
         let transaction = TxBuilder::eip1559(Address::random())
-            .value(U256::from(1))
+            .value(U256::ONE)
             .build_eip1559();
 
         let current_time = std::time::SystemTime::now()
@@ -2380,7 +2379,7 @@ mod tests {
         authorization_count: usize,
     ) -> TempoPooledTransaction {
         use alloy_eips::eip7702::Authorization;
-        use alloy_primitives::{Signature, TxKind, address};
+        use alloy_primitives::{Signature, TxKind};
         use tempo_primitives::transaction::{
             TempoSignedAuthorization, TempoTransaction,
             tempo_transaction::Call,
@@ -2392,9 +2391,9 @@ mod tests {
         let authorizations: Vec<TempoSignedAuthorization> = (0..authorization_count)
             .map(|i| {
                 let auth = Authorization {
-                    chain_id: U256::from(1),
+                    chain_id: U256::ONE,
                     nonce: i as u64,
-                    address: address!("0000000000000000000000000000000000000001"),
+                    address: Address::with_last_byte(1),
                 };
                 TempoSignedAuthorization::new_unchecked(
                     auth,
@@ -2411,13 +2410,13 @@ mod tests {
             max_fee_per_gas: 20_000_000_000, // 20 gwei, above T1's minimum
             gas_limit: 1_000_000,
             calls: vec![Call {
-                to: TxKind::Call(address!("0000000000000000000000000000000000000001")),
+                to: TxKind::Call(Address::with_last_byte(1)),
                 value: U256::ZERO,
                 input: alloy_primitives::Bytes::new(),
             }],
             nonce_key: U256::ZERO,
             nonce: 0,
-            fee_token: Some(address!("0000000000000000000000000000000000000002")),
+            fee_token: Some(Address::with_last_byte(2)),
             fee_payer_signature: None,
             valid_after: None,
             valid_before: None,
@@ -2499,7 +2498,7 @@ mod tests {
 
         // Create an AA transaction with no calls
         let transaction = TxBuilder::aa(Address::random())
-            .fee_token(address!("0000000000000000000000000000000000000002"))
+            .fee_token(Address::with_last_byte(2))
             .calls(vec![]) // Empty calls
             .build();
         let validator = setup_validator(&transaction, current_time);
@@ -2547,7 +2546,7 @@ mod tests {
         ];
 
         let transaction = TxBuilder::aa(Address::random())
-            .fee_token(address!("0000000000000000000000000000000000000002"))
+            .fee_token(Address::with_last_byte(2))
             .calls(calls)
             .build();
         let validator = setup_validator(&transaction, current_time);
@@ -2595,7 +2594,7 @@ mod tests {
         ];
 
         let transaction = TxBuilder::aa(Address::random())
-            .fee_token(address!("0000000000000000000000000000000000000002"))
+            .fee_token(Address::with_last_byte(2))
             .calls(calls)
             .build();
         let validator = setup_validator(&transaction, current_time);
@@ -2646,7 +2645,7 @@ mod tests {
         ];
 
         let transaction = TxBuilder::aa(Address::random())
-            .fee_token(address!("0000000000000000000000000000000000000002"))
+            .fee_token(Address::with_last_byte(2))
             .calls(calls)
             .gas_limit(TEMPO_T1_TX_GAS_LIMIT_CAP)
             .build();
@@ -2696,9 +2695,9 @@ mod tests {
 
         // Create a single authorization entry
         let auth = Authorization {
-            chain_id: U256::from(1),
+            chain_id: U256::ONE,
             nonce: 0,
-            address: address!("0000000000000000000000000000000000000001"),
+            address: Address::with_last_byte(1),
         };
         let authorization = TempoSignedAuthorization::new_unchecked(
             auth,
@@ -2706,7 +2705,7 @@ mod tests {
         );
 
         let transaction = TxBuilder::aa(Address::random())
-            .fee_token(address!("0000000000000000000000000000000000000002"))
+            .fee_token(Address::with_last_byte(2))
             .calls(calls)
             .authorization_list(vec![authorization])
             .gas_limit(TEMPO_T1_TX_GAS_LIMIT_CAP)
@@ -2748,7 +2747,7 @@ mod tests {
             fee_token,
             ExtendedAccount::new(0, U256::ZERO).extend_storage([
                 (tip20_slots::CURRENCY.into(), usd_currency_value),
-                (tip20_slots::PAUSED.into(), U256::from(1)),
+                (tip20_slots::PAUSED.into(), U256::ONE),
             ]),
         );
 
@@ -2879,7 +2878,7 @@ mod tests {
             paused_validator_token,
             ExtendedAccount::new(0, U256::ZERO).extend_storage([
                 (tip20_slots::CURRENCY.into(), usd_currency_value),
-                (tip20_slots::PAUSED.into(), U256::from(1)),
+                (tip20_slots::PAUSED.into(), U256::ONE),
             ]),
         );
 
@@ -2932,7 +2931,7 @@ mod tests {
             .collect();
 
         let transaction = TxBuilder::aa(Address::random())
-            .fee_token(address!("0000000000000000000000000000000000000002"))
+            .fee_token(Address::with_last_byte(2))
             .gas_limit(TEMPO_T1_TX_GAS_LIMIT_CAP)
             .calls(calls)
             .build();
@@ -2969,7 +2968,7 @@ mod tests {
             .collect();
 
         let transaction = TxBuilder::aa(Address::random())
-            .fee_token(address!("0000000000000000000000000000000000000002"))
+            .fee_token(Address::with_last_byte(2))
             .gas_limit(TEMPO_T1_TX_GAS_LIMIT_CAP)
             .calls(calls)
             .build();
@@ -3007,7 +3006,7 @@ mod tests {
         }];
 
         let transaction = TxBuilder::aa(Address::random())
-            .fee_token(address!("0000000000000000000000000000000000000002"))
+            .fee_token(Address::with_last_byte(2))
             .gas_limit(TEMPO_T1_TX_GAS_LIMIT_CAP)
             .calls(calls)
             .build();
@@ -3042,7 +3041,7 @@ mod tests {
         }];
 
         let transaction = TxBuilder::aa(Address::random())
-            .fee_token(address!("0000000000000000000000000000000000000002"))
+            .fee_token(Address::with_last_byte(2))
             .gas_limit(TEMPO_T1_TX_GAS_LIMIT_CAP)
             .calls(calls)
             .build();
@@ -3085,7 +3084,7 @@ mod tests {
             .collect();
 
         let transaction = TxBuilder::aa(Address::random())
-            .fee_token(address!("0000000000000000000000000000000000000002"))
+            .fee_token(Address::with_last_byte(2))
             .gas_limit(TEMPO_T1_TX_GAS_LIMIT_CAP)
             .access_list(AccessList(items))
             .build();
@@ -3123,7 +3122,7 @@ mod tests {
             .collect();
 
         let transaction = TxBuilder::aa(Address::random())
-            .fee_token(address!("0000000000000000000000000000000000000002"))
+            .fee_token(Address::with_last_byte(2))
             .gas_limit(TEMPO_T1_TX_GAS_LIMIT_CAP)
             .access_list(AccessList(items))
             .build();
@@ -3166,7 +3165,7 @@ mod tests {
         }];
 
         let transaction = TxBuilder::aa(Address::random())
-            .fee_token(address!("0000000000000000000000000000000000000002"))
+            .fee_token(Address::with_last_byte(2))
             .gas_limit(TEMPO_T1_TX_GAS_LIMIT_CAP)
             .access_list(AccessList(items))
             .build();
@@ -3204,7 +3203,7 @@ mod tests {
         }];
 
         let transaction = TxBuilder::aa(Address::random())
-            .fee_token(address!("0000000000000000000000000000000000000002"))
+            .fee_token(Address::with_last_byte(2))
             .gas_limit(TEMPO_T1_TX_GAS_LIMIT_CAP)
             .access_list(AccessList(items))
             .build();
@@ -3253,7 +3252,7 @@ mod tests {
         );
 
         let transaction = TxBuilder::aa(Address::random())
-            .fee_token(address!("0000000000000000000000000000000000000002"))
+            .fee_token(Address::with_last_byte(2))
             .gas_limit(TEMPO_T1_TX_GAS_LIMIT_CAP)
             .access_list(AccessList(items))
             .build();
@@ -3301,7 +3300,7 @@ mod tests {
         );
 
         let transaction = TxBuilder::aa(Address::random())
-            .fee_token(address!("0000000000000000000000000000000000000002"))
+            .fee_token(Address::with_last_byte(2))
             .gas_limit(TEMPO_T1_TX_GAS_LIMIT_CAP)
             .access_list(AccessList(items))
             .build();
