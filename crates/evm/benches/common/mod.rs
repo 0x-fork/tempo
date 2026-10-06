@@ -336,7 +336,7 @@ pub(crate) fn fixture_from_seeded_db(seeded: InMemoryDB) -> ExecutionFixture {
     for (address, account) in state_cache.accounts {
         insert_account(&execution_cache, &mut accounts, address, &account);
         for (slot, value) in account.storage {
-            let storage_key = B256::new(slot.to_be_bytes());
+            let storage_key = B256::from(slot);
             execution_cache.insert_storage(address, storage_key, Some(value));
             storage.insert((address, storage_key), value);
         }
