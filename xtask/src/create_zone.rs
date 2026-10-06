@@ -22,6 +22,7 @@ use zone_primitives::constants::zone_chain_id;
 
 use crate::{
     generate_zone_genesis::wait_for_finalized_pre_creation_anchor,
+    genesis_forks::resolve_l1_forks,
     safe::{SafeProposal, verify_safe, write_safe_proposal},
     zone_utils::{MODERATO_ZONE_FACTORY, parse_private_key, write_owner_only},
 };
@@ -213,6 +214,7 @@ impl CreateZone {
             .connect(&self.l1_rpc_url)
             .await
             .wrap_err("failed connecting to Tempo L1 RPC")?;
+        resolve_l1_forks(&provider, &self.forks).await?;
         let factory = ZoneFactory::new(self.zone_factory, &provider);
         let owner = factory
             .owner()
@@ -441,12 +443,13 @@ impl CreateZone {
             return self.propose_to_safe(&proposal).await;
         }
 
-        let (provider, receipt) = if let Some(tx_hash) = self.creation_tx {
+        let (provider, receipt, forks) = if let Some(tx_hash) = self.creation_tx {
             let provider = ProviderBuilder::new_with_network::<TempoNetwork>()
                 .connect(&self.l1_rpc_url)
                 .await
                 .wrap_err("failed connecting to Tempo L1 RPC")?
                 .erased();
+            let forks = resolve_l1_forks(&provider, &self.forks).await?;
             println!("Reading createZone transaction {tx_hash}...");
             let receipt = provider
                 .get_transaction_receipt(tx_hash)
@@ -455,7 +458,7 @@ impl CreateZone {
                 .ok_or_else(|| {
                     eyre!("transaction {tx_hash} has no receipt yet; rerun once it is mined")
                 })?;
-            (provider, receipt)
+            (provider, receipt, forks)
         } else {
             let private_key = self
                 .private_key
@@ -469,8 +472,9 @@ impl CreateZone {
                 .await
                 .wrap_err("failed connecting to Tempo L1 RPC")?
                 .erased();
+            let forks = resolve_l1_forks(&provider, &self.forks).await?;
             let receipt = self.send_create_zone(&provider, signer_address).await?;
-            (provider, receipt)
+            (provider, receipt, forks)
         };
         println!("Transaction confirmed in block {:?}", receipt.block_number);
         println!("Status: {}", receipt.status());
@@ -536,8 +540,6 @@ impl CreateZone {
             anchor.block_number, anchor.hash
         );
 
-        let header_rlp_hex = const_hex::encode(&anchor.rlp);
-
         let genesis_cmd = crate::generate_zone_genesis::GenerateZoneGenesis {
             output: self.output.clone(),
             chain_id,
@@ -546,7 +548,7 @@ impl CreateZone {
             tempo_portal: None,
             l1_rpc_url: None,
             default_fee_token: self.initial_token,
-            tempo_genesis_header_rlp: Some(header_rlp_hex),
+            tempo_genesis_header_rlp: None,
             admin: self.admin,
             sequencer: Some(leader),
             with_createx: true,
@@ -554,7 +556,7 @@ impl CreateZone {
             with_create2_factory: true,
             forks: self.forks,
         };
-        genesis_cmd.run().await?;
+        genesis_cmd.generate(forks, anchor.rlp).await?;
 
         // Write zone.json with deployment metadata for downstream tooling (e.g. `just zone-up`).
         let zone_json = serde_json::json!({
