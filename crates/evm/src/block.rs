@@ -1653,7 +1653,6 @@ mod tests {
                                 validator_fee: U256::ZERO,
                             },
                             |_| {},
-                            false,
                         )
                         .unwrap();
                 }
