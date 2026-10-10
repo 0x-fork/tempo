@@ -13717,9 +13717,13 @@ name = "tempo-contracts"
 version = "1.16.0"
 dependencies = [
  "alloy-contract",
+ "alloy-network",
  "alloy-primitives",
  "alloy-provider",
+ "alloy-rpc-types-eth",
  "alloy-sol-types",
+ "alloy-transport",
+ "k256",
  "serde",
  "tempo-hardfork",
  "tokio",
@@ -16371,6 +16375,18 @@ name = "zmij"
 version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
+
+[[package]]
+name = "zone-primitives"
+version = "1.16.0"
+dependencies = [
+ "alloy-primitives",
+ "alloy-rlp",
+ "serde",
+ "tempo-contracts",
+ "tempo-hardfork",
+ "thiserror 2.0.18",
+]
 
 [[package]]
 name = "zstd"
