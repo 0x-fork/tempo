@@ -1,6 +1,6 @@
 //! Dynamic role supervision for multi-sequencer zone nodes.
 //!
-//! The [`RoleController`] switches complete role generations — block production or import,
+//! The role controller switches complete role generations — block production or import,
 //! broadcast, transaction flow, settlement, and sequencer background tasks — as one fenced
 //! unit, driven by the effective [`LeadershipSchedule`].
 //!
@@ -8,7 +8,7 @@
 //! Tempo anchor `N` to be consumed, if `schedule.leader_for(N)` is this node and the zone
 //! block embedding `N − 1` is locally canonical, the controller runs the leader generation
 //! and the engine produces `N`; otherwise it runs the follower generation and imports. The
-//! per-anchor [`ProductionPermit`](crate::ProductionPermit) inside the engine and the
+//! per-anchor [`ProductionPermit`] inside the engine and the
 //! anchor-aware sender fence inside follower import are the protocol fences; generation
 //! switching is lifecycle management.
 
@@ -21,7 +21,7 @@ use reth_node_api::ConsensusEngineHandle;
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives_traits::SealedHeader;
 use reth_provider::HeaderProvider;
-use reth_storage_api::{BlockNumReader, BlockReader, ReceiptProvider, StateProviderFactory};
+use reth_storage_api::{BlockNumReader, BlockReader, StateProviderFactory};
 use reth_transaction_pool::TransactionPool;
 use tempo_primitives::{Block, TempoHeader};
 use tokio::{
@@ -623,18 +623,15 @@ pub(crate) async fn run_role_controller<P, Pool>(
     context: RoleControllerContext<P, Pool>,
     sinks: EventSinks,
 ) where
-    P: BlockNumReader
-        + BlockReader<Block = Block>
+    P: BlockReader<Block = Block>
         + HeaderProvider<Header = TempoHeader>
-        + StateProviderFactory
-        + ReceiptProvider
         + PersistedBlockSubscriptions
         + ZoneSequencerProvider
         + Clone
         + Send
         + Sync
         + 'static,
-    Pool: TransactionPool<Transaction = TempoPooledTransaction> + Clone + 'static,
+    Pool: TransactionPool<Transaction = TempoPooledTransaction> + 'static,
 {
     let mut schedule_changes = context.schedule.subscribe();
 
@@ -857,18 +854,15 @@ async fn start_generation<P, Pool>(
     id: u64,
 ) -> eyre::Result<RunningGeneration>
 where
-    P: BlockNumReader
-        + BlockReader<Block = Block>
+    P: BlockReader<Block = Block>
         + HeaderProvider<Header = TempoHeader>
-        + StateProviderFactory
-        + ReceiptProvider
         + PersistedBlockSubscriptions
         + ZoneSequencerProvider
         + Clone
         + Send
         + Sync
         + 'static,
-    Pool: TransactionPool<Transaction = TempoPooledTransaction> + Clone + 'static,
+    Pool: TransactionPool<Transaction = TempoPooledTransaction> + 'static,
 {
     let token = CancellationToken::new();
     let mut leader_shutdown = None;
