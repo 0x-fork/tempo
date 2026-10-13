@@ -21,9 +21,9 @@ use reth_node_api::ConsensusEngineHandle;
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives_traits::SealedHeader;
 use reth_provider::HeaderProvider;
-use reth_storage_api::{BlockNumReader, BlockReader, StateProviderFactory};
+use reth_storage_api::{BlockNumReader, StateProviderFactory};
 use reth_transaction_pool::TransactionPool;
-use tempo_primitives::{Block, TempoHeader};
+use tempo_primitives::TempoHeader;
 use tokio::{
     sync::{mpsc, oneshot},
     task::JoinSet,
@@ -623,14 +623,7 @@ pub(crate) async fn run_role_controller<P, Pool>(
     context: RoleControllerContext<P, Pool>,
     sinks: EventSinks,
 ) where
-    P: BlockReader<Block = Block>
-        + HeaderProvider<Header = TempoHeader>
-        + PersistedBlockSubscriptions
-        + ZoneSequencerProvider
-        + Clone
-        + Send
-        + Sync
-        + 'static,
+    P: ZoneSequencerProvider + PersistedBlockSubscriptions,
     Pool: TransactionPool<Transaction = TempoPooledTransaction> + 'static,
 {
     let mut schedule_changes = context.schedule.subscribe();
@@ -854,14 +847,7 @@ async fn start_generation<P, Pool>(
     id: u64,
 ) -> eyre::Result<RunningGeneration>
 where
-    P: BlockReader<Block = Block>
-        + HeaderProvider<Header = TempoHeader>
-        + PersistedBlockSubscriptions
-        + ZoneSequencerProvider
-        + Clone
-        + Send
-        + Sync
-        + 'static,
+    P: ZoneSequencerProvider + PersistedBlockSubscriptions,
     Pool: TransactionPool<Transaction = TempoPooledTransaction> + 'static,
 {
     let token = CancellationToken::new();
