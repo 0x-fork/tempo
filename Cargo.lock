@@ -14119,6 +14119,7 @@ dependencies = [
  "reth-node-core",
  "reth-primitives-traits",
  "reth-provider",
+ "reth-stages-types",
  "tempfile",
  "tempo-alloy",
  "tempo-chainspec",
