@@ -18,13 +18,13 @@ crates/consensus-config/ @joshieDo @SuperFluffy @hamdiallam
 crates/contracts/ @0xrusowsky @0xKitsune @klkvr @mattsse @legion2002
 crates/dkg-onchain-artifacts/ @joshieDo @SuperFluffy @hamdiallam
 crates/e2e/ @joshieDo @SuperFluffy @hamdiallam @pepyakin
-crates/evm/ @0xKitsune @klkvr @mattsse @shekhirin
+crates/evm/ @0xKitsune @klkvr @mattsse @shekhirin @rakita
 crates/ext/ @Zygimantass @SuperFluffy
 crates/eyre/ @SuperFluffy
 crates/faucet/ @klkvr @mattsse
 crates/fuzz-harness/ @0xrusowsky
 crates/fuzz-types/ @0xrusowsky
-crates/hardfork/ @klkvr @0xrusowsky @legion2002 @jenpaff
+crates/hardfork/ @klkvr @0xrusowsky @legion2002 @jenpaff @mattsse @rakita @0xKitsune
 crates/nitro-attestation/ @shekhirin @rkrasiuk
 crates/node/ @0xKitsune @klkvr @mattsse
 crates/node-launcher/ @mattsse
@@ -32,7 +32,6 @@ crates/payload/ @0xKitsune @klkvr @mattsse @shekhirin
 crates/precompiles/ @0xrusowsky @0xKitsune @klkvr @mattsse @legion2002 @joshieDo
 crates/precompiles-macros/ @0xrusowsky @mattsse
 crates/primitives/ @klkvr @mattsse @joshieDo @0xrusowsky
-crates/revm/ @klkvr @mattsse @rakita @0xKitsune
 crates/state-bloat/ @mattsse @klkvr
 crates/telemetry-util/ @SuperFluffy
 crates/transaction-pool/ @0xKitsune @klkvr @mattsse
@@ -46,7 +45,7 @@ bin/prover/ @rkrasiuk @shekhirin
 crates/zones/chainspec/ @0xrusowsky @0xKitsune @klkvr @mattsse
 crates/zones/checker/ @rkrasiuk
 crates/zones/contracts/ @0xrusowsky @0xKitsune @klkvr @mattsse @legion2002 @0xalpharush
-crates/zones/evm/ @0xrusowsky @klkvr @0xKitsune
+crates/zones/evm/ @0xrusowsky @klkvr @0xKitsune @rakita
 crates/zones/exithatch/ @rkrasiuk
 crates/zones/l1/ @0xKitsune @mattsse @klkvr @0xrusowsky @adityapk00 @rkrasiuk
 crates/zones/node/ @mattsse @0xKitsune @klkvr @0xrusowsky @adityapk00 @legion2002 @rkrasiuk
